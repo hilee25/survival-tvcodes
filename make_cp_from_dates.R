@@ -1,8 +1,3 @@
-# 필요한 패키지
-library(survival); library(dplyr); library(ggplot2)
-library(purrr); library(tibble); library(patchwork); library(survminer)
-options(scipen = 999) # 지수표기 억제
-
 # =========================================================
 # make_cp_from_dates(): Counting process 자료 변환 함수
 # 날짜 기반 원자료 → counting-process + time-dependent binary covariate 생성
