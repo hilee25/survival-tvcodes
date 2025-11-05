@@ -1,13 +1,14 @@
 # =========================================================
 # .survfit_at_L(): 시각화 도우미
 # 랜드마크 시점 L에서 KM 생존곡선 적합을 위한 데이터 구성 + survfit 객체 생성
-# - 입력: counting-process long 데이터 (id, tstart, tstop, event, response), L(스칼라)
+# - 입력: counting-process 데이터 (id, tstart, tstop, event, response), L
 # - 처리: (1) L 이전 사건 제거, (2) L 이후 추적 있는 id만 유지,
 #         (3) L을 덮는 구간의 response로 그룹(Z_L) 고정, (4) KM 적합
-# - 출력: list(sf = survfit 또는 NULL, postL = 분석 데이터, ztab = 그룹 레코드 수 table)
+# - 출력: list(sf = survfit 또는 NULL, postL = 분석 데이터, ztab =  (id 기준) 그룹 table)
 # =========================================================
 
 .survfit_at_L <- function(cp_df, L) {
+  # --- (0) 입력 유효성 검사 ---
   stopifnot(all(c("id","tstart","tstop","event","response") %in% names(cp_df)))
   
   # --- (1) L 이전 시점 발생자 제외 ---
@@ -33,15 +34,15 @@
     left_join(zL, by = "id") %>%
     mutate(Z_L = factor(Z_L, levels = c(0,1), labels = c("Z=0","Z=1")))
   
-  gtbl <- table(distinct(postL, id, Z_L)$Z_L)   ##table(postL$Z_L)에서 수정함
-
+  gtbl <- table(distinct(postL, id, Z_L)$Z_L) # 그룹별 레코드 수
+  
   # --- (5) KM 적합 ---
   if (length(gtbl) < 2 || any(gtbl == 0)) {
     # KM 곡선 불가 → sf=NULL 로 반환
     return(list(sf = NULL, postL = postL, ztab = gtbl))
   }
   sf <- survfit(Surv(tstart, tstop, event) ~ Z_L, data = postL)
-
+  
   # --- (6) 반환 ---
   list(sf = sf, postL = postL, ztab = gtbl)
 }
@@ -50,7 +51,7 @@
 # =========================================================
 # plot_all_landmarks(): 다중 랜드마크 민감도 분석 및 시각화 함수
 # 여러 랜드마크 L들에 대해: (1) fit_for_L 결과/요약표 생성 + (2) KM 곡선/위험표 패널 그리드
-# - 입력: cp_df, landmarks(벡터), 시각화 옵션(신뢰구간/팔레트/테마/리스크테이블 등)
+# - 입력: cp_df, landmarks, 시각화 옵션
 # - 처리: 각 L마다 fit_for_L + .survfit_at_L 수행
 # - 출력: list(plot = patchwork grid, table = tibble 요약표, per_L = 내부 객체 목록)
 # =========================================================
@@ -70,7 +71,6 @@ plot_all_landmarks <- function(cp_df,
                                conf_int = TRUE,
                                tmax = NULL,
                                palette = c("#1f77b4", "#d62728"),
-                               annotate_p = TRUE,
                                theme_fn = ggplot2::theme_bw,
                                base_size = 12,
                                legend_position = "top",
@@ -79,7 +79,12 @@ plot_all_landmarks <- function(cp_df,
                                show_titles = TRUE,
                                show_risktable = TRUE,
                                risk_table_height = 0.35,
-                               risk_table_base_size = 10) {
+                               risk_table_base_size = 10,
+                               annotate_hrci = TRUE,            # HR & 95% CI 표시 여부
+                               annotate_mb_p = FALSE,            # Mantel–Byar p 표시 여부
+                               annotate_cox_p = TRUE,           # Cox score p 표시 여부
+                               ref_label = "Z=0"
+) {
   # --- (0) 입력/팔레트 정리 ---
   if (length(palette) < 2) palette <- rep_len(palette, 2)
   L_vec <- sort(unique(as.numeric(landmarks)))
@@ -89,7 +94,7 @@ plot_all_landmarks <- function(cp_df,
   fits <- purrr::map(L_vec, ~tryCatch(
     fit_for_L(cp_df, .x, robust = robust),
     error = function(e) list(error = e, L = .x)
-    ))
+  ))
   sfs  <- purrr::map(L_vec, ~.survfit_at_L(cp_df, .x))
   
   # --- (2) 요약표 생성 ---
@@ -97,15 +102,37 @@ plot_all_landmarks <- function(cp_df,
     if (!is.null(fit$error)) {
       tibble(L = fit$L, n_total = NA_integer_, n_events = NA_integer_,
              n_Z0 = NA_integer_, n_Z1 = NA_integer_,
-             HR = NA_real_, CI_low = NA_real_, CI_high = NA_real_, p = NA_real_,
+             HR = NA_real_, CI_low = NA_real_, CI_high = NA_real_, 
+             p_mb = NA_real_, p_cox = NA_real_,
              note = paste0("fit error: ", conditionMessage(fit$error)))
     } else {
       z0 <- unname(if ("Z=0" %in% names(fit$n_group)) fit$n_group[["Z=0"]] else NA_integer_)
       z1 <- unname(if ("Z=1" %in% names(fit$n_group)) fit$n_group[["Z=1"]] else NA_integer_)
       note <- if (is.null(sflist$sf)) "KM unavailable (single/empty group)" else NA_character_
+      
+      p_cox <- tryCatch({
+        s <- summary(fit$fit)
+        as.numeric(s$sctest[3])        # score test p
+      }, error = function(e) NA_real_)
+      
+      p_mb <- tryCatch({
+        postL <- sflist$postL
+        id_tab <- table(distinct(postL, id, Z_L)$Z_L)
+        two_groups <- length(id_tab) == 2 && all(id_tab > 0)
+        has_event  <- sum(postL$event) > 0
+        if (!two_groups || !has_event) return(NA_real_)
+        cp_for_mb <- postL %>%
+          dplyr::transmute(
+            tstart, tstop, event,
+            response = as.integer(Z_L != ref_label)
+          )
+        mantel_byar_cp(cp_for_mb, ref_val = 0L)$p
+      }, error = function(e) NA_real_)
+      
       tibble(L = fit$L, n_total = fit$n_total, n_events = fit$n_events,
              n_Z0 = z0, n_Z1 = z1,
-             HR = fit$hr, CI_low = fit$ci_low, CI_high = fit$ci_high, p = fit$p,
+             HR = fit$hr, CI_low = fit$ci_low, CI_high = fit$ci_high, 
+             p_cox = p_cox, p_mb  = p_mb,  
              note = note)
     }
   }) %>% arrange(L)
@@ -114,7 +141,7 @@ plot_all_landmarks <- function(cp_df,
   km_plots <- purrr::map2(L_vec, sfs, function(Li, sflist) {
     ttl <- paste0(title_prefix, format(round(Li, 3), trim = TRUE))
     
-    # KM 불가능(단일/빈 그룹)
+    # KM 불가(단일/빈 그룹) → 안내 패널
     if (is.null(sflist$sf)) {
       return(
         ggplot() +
@@ -126,7 +153,7 @@ plot_all_landmarks <- function(cp_df,
       )
     }
     
-    # KM 곡선, 위험표(옵션)
+    # KM 곡선 생성, 위험표(옵션)
     g <- ggsurvplot(
       sflist$sf,
       data = sflist$postL,                
@@ -156,18 +183,33 @@ plot_all_landmarks <- function(cp_df,
       p <- p + coord_cartesian(xlim = c(0, tmax))
     }
     
-    # HR/CI/p 주석(옵션): Mantel-Byar 맥락의 score test p-value
-    if (annotate_p) {
-      row <- tab %>% filter(L == Li)
-      if (nrow(row) == 1 && is.finite(row$HR)) {
-        lab <- sprintf("HR=%.2f (%.2f–%.2f),\nMantel-Byar test p=%s",
-                       row$HR, row$CI_low, row$CI_high,
-                       ifelse(row$p < 1e-4, "<1e-4",
-                              formatC(row$p, format = "f", digits = 3)))
-        p <- p + annotate("label", x = 0, y = 0, # 필요시 위치 조정
-                          label = lab, vjust = -0.2, hjust = 0,
-                          size = 3, label.size = 0.2,
-                          lineheight = 0.9)
+    # HR/CI/p 주석(옵션)
+    if (annotate_hrci || annotate_mb_p || annotate_cox_p) {
+      row <- tab %>% dplyr::filter(L == Li)
+      if (nrow(row) == 1) {
+        parts <- character(0)
+        HRok <- isTRUE(is.finite(row$HR)) && isTRUE(is.finite(row$CI_low)) && isTRUE(is.finite(row$CI_high))
+        if (annotate_hrci && HRok) {
+          parts <- c(parts, sprintf("HR=%.2f (%.2f–%.2f)", row$HR, row$CI_low, row$CI_high))
+        }
+        if (annotate_mb_p && isTRUE(is.finite(row$p_mb))) {
+          parts <- c(parts, sprintf("Mantel-Byar p=%s",
+                                    ifelse(row$p_mb < 1e-4, "<1e-4",
+                                           formatC(row$p_mb, format = "f", digits = 3))))
+        }
+        if (annotate_cox_p && isTRUE(is.finite(row$p_cox))) {
+          parts <- c(parts, sprintf("Cox p=%s",
+                                    ifelse(row$p_cox < 1e-4, "<1e-4",
+                                           formatC(row$p_cox, format = "f", digits = 3))))
+        }
+        if (length(parts) > 0) {
+          lab <- paste(parts, collapse = ",\n")
+          p <- p + ggplot2::annotate(
+            "label", x = 0, y = 0,
+            label = lab, vjust = -0.2, hjust = 0,
+            size = 3, label.size = 0.2, lineheight = 0.9
+          )
+        }
       }
     }
     
