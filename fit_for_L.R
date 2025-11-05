@@ -4,7 +4,6 @@
 # - 입력: counting-process long 데이터(id, tstart, tstop, event, response)
 # - 처리: L 직후 at-risk 집단만 남기고, L을 덮는 구간의 response 값을 Z_L로 고정
 # - 출력: HR, 95% CI, score test p-value 등 요약 + coxph 적합 객체
-# - 의존성: dplyr, survival
 # ==============================================
 #' @param cp_df data.frame. columns(id, tstart, tstop, event, response).
 #' @param L numeric. 랜드마크 시점.
@@ -13,6 +12,7 @@
 #' @return list(L, n_total, n_events, n_group, hr, ci_low, ci_high, p, fit)
 
 fit_for_L <- function(cp_df, L, robust = TRUE) {
+  # --- (0) 입력 유효성 검사 ---
   stopifnot(all(c("id","tstart","tstop","event","response") %in% names(cp_df)))
   
   # --- (1) L 이전 시점 발생자 제외 ---
