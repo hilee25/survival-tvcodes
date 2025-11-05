@@ -1,10 +1,13 @@
-# 필요한 패키지
+# =========================================================
+# jasa.R: 데이터 분석 전체 재현 코드
+# =========================================================
+
+## 필요한 패키지
 library(survival); library(dplyr); library(ggplot2); library(purrr); library(tibble); library(patchwork); library(survminer)
 options(scipen = 999) # 지수표기 억제
 
-### 데이터 적용 ###
-data <- jasa
 
+## (3.2) 데이터 적용
 cp <- make_cp_from_dates(
   data = jasa,
   accept_col = "accept.dt",
@@ -16,23 +19,24 @@ cp <- make_cp_from_dates(
 )
 
 
-# jasa 데이터 적용: L = 60일
+## (3.3.1) jasa 데이터 적용: L = 60일
 result_60 <- fit_for_L(cp, L = 60, robust = TRUE)
+
 cat(sprintf("60일 랜드마크: HR=%.2f (95%% CI: %.2f-%.2f), p=%.3f\n",
             result_60$hr, result_60$ci_low, result_60$ci_high, result_60$p))
 
 
-# jasa 데이터 적용: L = 30, 60, 90, 120일
+## (3.3.2) jasa 데이터 적용: L = 30, 60, 90, 120일
+# 다중 랜드마크 분석 및 시각화
 res <- plot_all_landmarks(
   cp_df = cp,
   landmarks = c(30, 60, 90, 120),
-  show_risktable = TRUE,   
-  risk_table_height = 0.35,   
-  risk_table_base_size = 9,      
-  theme_fn = ggplot2::theme_bw,
-  legend_position = "top",
+  robust = TRUE,
+  conf_int = FALSE,
+  show_risktable = TRUE,
+  risk_table_height = 0.35,
   ncol = 2,
-  conf_int = FALSE
+  annotate_cox_p = TRUE
 )
 
 # 패널 그래프 출력
@@ -42,20 +46,35 @@ print(res$plot)
 print(res$table)
 
 
-### 동일성 확인 ###
-## Cox(time-dependent) & Score test(β=0)
-fit <- coxph(Surv(tstart, tstop, event) ~ response,
-             data = cp, ties = "efron")
-summary(fit)
-s <- summary(fit)                         # s$sctest: Score (logrank) test
-# summary.coxph의 sctest는 보통 c(Chisq, df, p) 순서
-chisq_score <- as.numeric(s$sctest[1]); chisq_score
-df_score    <- as.integer(s$sctest[2]); df_score
-p_score     <- as.numeric(s$sctest[3]); p_score
+## (3.4.1)
+mb_result <- mantel_byar_cp(cp, ref_val = 0)
 
-## Mantel–Byar (log-rank on counting-process)
-mb_res <- mantel_byar_cp(cp)
+cat(sprintf("Mantel-Byar 검정:\n"))
+cat(sprintf("  관찰 사망자 (비이식): %d\n", mb_result$D_ref))
+cat(sprintf("  기대 사망자: %.2f\n", mb_result$E))
+cat(sprintf("  χ² = %.4f\n", mb_result$chisq))
+cat(sprintf("  p-value = %.4f\n", mb_result$p))
 
-# 값 비교하여 표시
-cat(sprintf("Mantel–Byar (custom): chisq=%.4f, p=%.6f\n", mb_res$chisq, mb_res$p))
-cat(sprintf("Cox Score test: chisq=%.4f, p=%.6f\n", chisq_score, p_score))
+
+## (3.4.2) 
+# 시간종속 Cox 모형
+fit_tdcox <- coxph(Surv(tstart, tstop, event) ~ response,
+                   data = cp, ties = "efron")
+
+# 요약
+summary(fit_tdcox)
+
+# Score 검정
+s <- summary(fit_tdcox)
+cat(sprintf("\nCox Score 검정:\n"))
+cat(sprintf("  χ² = %.4f\n", s$sctest[1]))
+cat(sprintf("  p-value = %.4f\n", s$sctest[3]))
+
+
+## (3.4.3)
+# Schoenfeld 잔차 검정
+test_ph <- cox.zph(fit_tdcox)
+print(test_ph)
+
+# 시각화
+ggcoxzph(test_ph)
