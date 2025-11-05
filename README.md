@@ -12,7 +12,7 @@
   - `survival` (Cox, Surv, tmerge)
   - `dplyr`, `tibble`, `purrr`
   - `ggplot2`, `patchwork`, `survminer` (시각화)
-- 설치 예
+- 설치
   ```r
   install.packages(c("survival","dplyr","tibble","purrr","ggplot2","patchwork","survminer"))
 
@@ -29,7 +29,8 @@
 **1) make_cp_from_dates()**
 
 - 목적
-  - 베이스라인, 반응(이식)일, 추적종료일 정보를 이용해 날짜 기반 자료를 Cox 모형용 counting-process(long) 형식으로 변환하고, 시간종속 이진 공변량(response)을 생성한다.
+  - 베이스라인, 반응일, 추적종료일 정보를 이용해 날짜 기반 자료를 counting-process 형식으로 변환하고, 시간종속 이진 공변량(response)을 생성한다.
+
 - 사용법
   ```r
   make_cp_from_dates(
@@ -56,10 +57,8 @@
 
 
 - 반환값
-tstart, tstop, event, response 변수를 포함한 long-format data.frame을 반환한다.
+tstart, tstop, event, response 변수를 포함한 data.frame을 반환한다.
 이는 coxph(Surv(tstart, tstop, event) ~ response) 형태의 모형에 바로 사용 가능하다.
-
-
   ```r
   data.frame(id, tstart, tstop, event, response)
 
@@ -71,6 +70,54 @@ tstart, tstop, event, response 변수를 포함한 long-format data.frame을 반
   tx_col = "tx.date",
   fu_col = "fu.date",
   status_col = "fustat"
-)
+  )
+
+
+**2) fit_for_L()**
+
+- 목적
+  - 단일 랜드마크 시점 L에서 위험집단을 정의하고, L 구간의 response 값을 고정한 그룹(Z_L)으로 Cox 비례위험 모형을 적합한다. Mantel–Byar 접근과 동일한 맥락의 score test p-value를 제공한다.
+
+- 사용법
+  ```r
+  fit_for_L(cp_df, L, robust = TRUE)
+
+- 주요인자
+
+| 인자       | 설명                                                                    |
+| -------- | --------------------------------------------------------------------- |
+| `cp_df`  | `id, tstart, tstop, event, response`를 갖는 counting-process 데이터프레임 |
+| `L`      | 랜드마크 시점                                                        |
+| `robust` | `cluster(id)` 기반 강건 분산 사용 여부(기본 `TRUE`)                               |
+
+- 반환값
+다음 원소를 갖는 리스트:
+  - L, n_total, n_events, n_group(Z=0/1 개수)
+  - hr, ci_low, ci_high, p
+  - fit (survival::coxph 객체)
+ 
+- 예시
+  ```r
+  res_L120 <- fit_for_L(cp_df, L = 120, robust = TRUE)
+  res_L120$hr; res_L120$p
+  summary(res_L120$fit)
+
+
+**3) plot_all_landmarks()**
+
+- 목적
+  - 여러 랜드마크 시점 L들에 대해, 각 L의 랜드마크 분석(HR/CI/p) 결과와 Kaplan–Meier 생존곡선, 표를 한 번에 비교·시각화한다.
+
+- 사용법
+  ```r
+  fit_for_L(cp_df, L, robust = TRUE)
+
+- 주요인자
+
+  
+- 반환값
+  - plot: 랜드마크별 KM 패널을 묶은 patchwork 객체
+  - table: 랜드마크별 요약표(L, n_total, n_events, n_Z0, n_Z1, HR, CI_low, CI_high, p, note)
+  - per_L: 내부 객체 목록(fit_for_L 결과와 .survfit_at_L 결과)
 
 
