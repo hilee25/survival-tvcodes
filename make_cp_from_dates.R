@@ -3,7 +3,6 @@
 # 날짜 기반 원자료 → counting-process + time-dependent binary covariate 생성
 # - 입력: landmark_days, accept, response, follow-up end, status
 # - 출력: id, tstart, tstop, event, response 가 있는 data.frame
-# - 용도: coxph(Surv(tstart, tstop, event) ~ response) 분석에 바로 사용
 # =========================================================
 #' @param data            분석할 data.frame
 #' @param landmark_days   numeric 벡터. baseline(accept)로부터 며칠 후를 landmark로 지정 (예: c(60, 120)).
