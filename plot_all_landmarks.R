@@ -170,7 +170,7 @@ plot_all_landmarks <- function(cp_df,
     
     p <- g$plot +
       labs(title = if (show_titles) ttl else NULL,
-           x = "Time since L", y = "Survival") +
+           x = "Time from L", y = "Survival") +
       theme(legend.position = legend_position,
             plot.title = element_text(face = "bold"),
             legend.title = element_blank()) + 
