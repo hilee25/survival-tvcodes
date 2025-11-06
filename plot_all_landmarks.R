@@ -81,8 +81,8 @@ plot_all_landmarks <- function(cp_df,
                                risk_table_height = 0.35,
                                risk_table_base_size = 10,
                                annotate_hrci = TRUE,            # HR & 95% CI 표시 여부
-                               annotate_mb_p = FALSE,            # Mantel–Byar p 표시 여부
-                               annotate_cox_p = TRUE,           # Cox score p 표시 여부
+                               annotate_mb_p = TRUE,            # Mantel–Byar p 표시 여부
+                               annotate_cox_p = FALSE,           # Cox score p 표시 여부
                                ref_label = "Z=0"
 ) {
   # --- (0) 입력/팔레트 정리 ---
@@ -193,7 +193,7 @@ plot_all_landmarks <- function(cp_df,
           parts <- c(parts, sprintf("HR=%.2f (%.2f–%.2f)", row$HR, row$CI_low, row$CI_high))
         }
         if (annotate_mb_p && isTRUE(is.finite(row$p_mb))) {
-          parts <- c(parts, sprintf("Mantel-Byar p=%s",
+          parts <- c(parts, sprintf("Mantel-Byar test p=%s",
                                     ifelse(row$p_mb < 1e-4, "<1e-4",
                                            formatC(row$p_mb, format = "f", digits = 3))))
         }
@@ -205,8 +205,8 @@ plot_all_landmarks <- function(cp_df,
         if (length(parts) > 0) {
           lab <- paste(parts, collapse = ",\n")
           p <- p + ggplot2::annotate(
-            "label", x = 0, y = 0,
-            label = lab, vjust = -0.2, hjust = 0,
+            "label", x = Inf, y = Inf,
+            label = lab, vjust = 1.1, hjust = 1.1,
             size = 3, label.size = 0.2, lineheight = 0.9
           )
         }
