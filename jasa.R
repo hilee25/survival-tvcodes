@@ -36,7 +36,7 @@ res <- plot_all_landmarks(
   show_risktable = TRUE,
   risk_table_height = 0.35,
   ncol = 2,
-  annotate_cox_p = TRUE
+  annotate_cox_p = FALSE
 )
 
 # 패널 그래프 출력
