@@ -163,6 +163,7 @@ plot_all_landmarks <- function(cp_df,
       risk.table.y.text = TRUE,           
       ggtheme = theme_fn(base_size = base_size),
       palette = palette,
+      linetype = "strata", # 선 구분
       censor = TRUE,
       legend.title = NULL,      
       legend.labs = c("response=0", "response=1") 
